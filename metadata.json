@@ -1,0 +1,5 @@
+{
+  "name": "AutoBit Rescue",
+  "description": "A comprehensive car maintenance and emergency breakdown service platform featuring real-time service requests, an admin dispatch dashboard, and AI-powered assistance.",
+  "requestFramePermissions": ["geolocation"]
+}

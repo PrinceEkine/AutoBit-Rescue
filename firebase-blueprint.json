@@ -1,0 +1,124 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile information",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["customer", "admin", "staff", "mechanic"] },
+        "isOnline": { "type": "boolean" },
+        "lastShiftAction": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "role"]
+    },
+    "ServiceRequest": {
+      "title": "Service Request",
+      "description": "A request for car maintenance or emergency help",
+      "type": "object",
+      "properties": {
+        "customerId": { "type": "string" },
+        "customerName": { "type": "string" },
+        "customerPhone": { "type": "string" },
+        "carDetails": {
+          "type": "object",
+          "properties": {
+            "make": { "type": "string" },
+            "model": { "type": "string" },
+            "year": { "type": "string" }
+          }
+        },
+        "description": { "type": "string" },
+        "location": {
+          "type": "object",
+          "properties": {
+            "latitude": { "type": "number" },
+            "longitude": { "type": "number" },
+            "address": { "type": "string" }
+          }
+        },
+        "status": { "type": "string", "enum": ["pending", "assigned", "in-progress", "completed", "cancelled"] },
+        "isEmergency": { "type": "boolean" },
+        "mechanicId": { "type": "string" },
+        "mechanicName": { "type": "string" },
+        "eta": { "type": "string" },
+        "estimatedCost": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["customerId", "status", "createdAt"]
+    },
+    "Mechanic": {
+      "title": "Mechanic",
+      "description": "Mechanic profile and availability",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string" },
+        "name": { "type": "string" },
+        "photoUrl": { "type": "string", "format": "uri" },
+        "skills": { "type": "array", "items": { "type": "string" } },
+        "availability": { "type": "string", "enum": ["available", "busy", "offline"] },
+        "phone": { "type": "string" }
+      },
+      "required": ["uid", "name"]
+    },
+    "SparePart": {
+      "title": "Spare Part",
+      "description": "Automotive spare parts for sale",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "name": { "type": "string" },
+        "category": { "type": "string" },
+        "price": { "type": "number" },
+        "description": { "type": "string" },
+        "stock": { "type": "integer" },
+        "image": { "type": "string" }
+      },
+      "required": ["id", "name", "price", "category"]
+    },
+    "ChatMessage": {
+      "title": "Chat Message",
+      "description": "Direct messages between customer and admin",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "senderId": { "type": "string" },
+        "senderName": { "type": "string" },
+        "text": { "type": "string" },
+        "timestamp": { "type": "string" },
+        "isAdmin": { "type": "boolean" }
+      },
+      "required": ["id", "senderId", "text", "timestamp"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": "User",
+      "description": "User profiles"
+    },
+    "/requests/{requestId}": {
+      "schema": "ServiceRequest",
+      "description": "Service requests queue"
+    },
+    "/mechanics/{mechanicId}": {
+      "schema": "Mechanic",
+      "description": "Mechanic directory"
+    },
+    "/spare_parts/{partId}": {
+      "schema": "SparePart",
+      "description": "Spare parts inventory"
+    },
+    "/shifts/{shiftId}": {
+      "schema": "object",
+      "description": "Shift logs"
+    },
+    "/chats/{chatId}/messages/{messageId}": {
+      "schema": "ChatMessage",
+      "description": "Chat messages"
+    }
+  }
+}

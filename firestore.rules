@@ -1,0 +1,122 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // 1. Global Safety Net - Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isSignedIn() && 
+        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin') ||
+         (request.auth.token.email == "princegogoekine@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isStaff() {
+      return isSignedIn() && 
+        ((exists(/databases/$(database)/documents/users/$(request.auth.uid)) && 
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role in ['admin', 'staff']) ||
+         (request.auth.token.email == "princegogoekine@gmail.com" && request.auth.token.email_verified == true));
+    }
+
+    function isMechanic() {
+      return isSignedIn() && 
+             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'mechanic';
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // ===============================================================
+    // Validation Blueprints
+    // ===============================================================
+    function isValidUser(data) {
+      return data.keys().hasAll(['uid', 'email', 'role', 'createdAt']) &&
+             data.uid == request.auth.uid &&
+             data.email is string && data.email.size() < 256 &&
+             data.role in ['customer', 'admin', 'staff', 'mechanic'] &&
+             data.createdAt is string;
+    }
+
+    function isValidRequest(data) {
+      return data.keys().hasAll(['customerId', 'status', 'createdAt', 'isEmergency']) &&
+             data.customerId is string && data.customerId.size() <= 128 &&
+             data.status in ['pending', 'assigned', 'in-progress', 'arrived', 'completed', 'cancelled'] &&
+             data.isEmergency is bool;
+    }
+
+    function isValidPart(data) {
+      return data.keys().hasAll(['name', 'price', 'category']) &&
+             data.name is string && data.name.size() <= 100 &&
+             data.price is number && data.price >= 0 &&
+             data.category is string;
+    }
+
+    // ===============================================================
+    // Collection Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isOwner(userId) || isStaff();
+      allow create: if isSignedIn() && isValidUser(incoming()) && (incoming().role == 'customer' || isAdmin());
+      allow update: if isSignedIn() && (isAdmin() || (isOwner(userId) && incoming().role == existing().role));
+    }
+
+    match /requests/{requestId} {
+      allow read: if isSignedIn() && (request.auth.uid == existing().customerId || isStaff() || isMechanic());
+      allow create: if (isSignedIn() && incoming().customerId == request.auth.uid && isValidRequest(incoming())) || 
+                      (!isSignedIn() && incoming().customerId.matches("^anon_.*") && isValidRequest(incoming()));
+      allow update: if isSignedIn() && (
+        isStaff() || 
+        (isMechanic() && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'eta', 'mechanicId', 'mechanicName'])) ||
+        (request.auth.uid == existing().customerId && incoming().diff(existing()).affectedKeys().hasOnly(['status', 'updatedAt', 'description', 'carDetails']))
+      );
+      allow delete: if isAdmin();
+    }
+
+    match /mechanics/{mechanicId} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    match /spare_parts/{partId} {
+      allow read: if true;
+      allow write: if isStaff();
+    }
+
+    match /shifts/{shiftId} {
+      allow read: if isStaff();
+      allow create: if isStaff() && incoming().userId == request.auth.uid;
+    }
+
+    match /chats/{chatId} {
+      allow read, write: if isSignedIn() && (request.auth.uid == chatId || isStaff() || chatId == 'global_admin_chat');
+      
+      match /messages/{messageId} {
+        allow read, write: if isSignedIn() && (request.auth.uid == chatId || isStaff() || chatId == 'global_admin_chat');
+      }
+    }
+  }
+}

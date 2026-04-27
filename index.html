@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AutoBit Rescue - Professional Car Maintenance</title>
+    <script>
+      (function() {
+        // Proactively handle ethereum object to avoid "cannot redefine property" errors.
+        try {
+          // Check if it's already defined and non-configurable
+          const desc = Object.getOwnPropertyDescriptor(window, 'ethereum');
+          if (!desc || desc.configurable) {
+            Object.defineProperty(window, 'ethereum', {
+              value: undefined,
+              writable: true,
+              configurable: true
+            });
+          }
+        } catch (e) {
+          // Swallow errors if the environment or an extension has locked this property
+        }
+
+        // Suppress noisy wallet extension errors and warnings
+        const suppressKeywords = ['ethereum', 'metamask', 'web3', 'provider', 'rpc', 'inpage.js', 'failed to connect to metamask'];
+        
+        const shouldSuppress = (args) => {
+          const msg = args.map(a => {
+            try {
+              return String(a);
+            } catch(e) {
+              return '';
+            }
+          }).join(' ').toLowerCase();
+          return suppressKeywords.some(kw => msg.includes(kw));
+        };
+
+        const originalError = console.error;
+        console.error = (...args) => {
+          if (shouldSuppress(args)) return;
+          originalError.apply(console, args);
+        };
+
+        const originalWarn = console.warn;
+        console.warn = (...args) => {
+          if (shouldSuppress(args)) return;
+          originalWarn.apply(console, args);
+        };
+
+        const handleWalletError = (eventOrMsg) => {
+          const msg = String(eventOrMsg.message || eventOrMsg.error?.message || eventOrMsg.reason || eventOrMsg || '').toLowerCase();
+          if (suppressKeywords.some(kw => msg.includes(kw))) {
+            if (eventOrMsg.preventDefault) eventOrMsg.preventDefault();
+            return true;
+          }
+          return false;
+        };
+
+        window.addEventListener('error', handleWalletError, true);
+        window.addEventListener('unhandledrejection', handleWalletError, true);
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>
+
