@@ -36,7 +36,13 @@ import {
   Plus,
   Video,
   PhoneCall,
-  Smartphone
+  Smartphone,
+  Mail,
+  Lock,
+  Eye,
+  EyeOff,
+  Github,
+  StickyNote
 } from 'lucide-react';
 import { auth, db } from './firebase';
 import { 
@@ -44,7 +50,10 @@ import {
   GoogleAuthProvider, 
   onAuthStateChanged, 
   signOut,
-  User as FirebaseUser
+  signInWithEmailAndPassword,
+  createUserWithEmailAndPassword,
+  User as FirebaseUser,
+  sendPasswordResetEmail
 } from 'firebase/auth';
 import { 
   collection, 
@@ -140,7 +149,7 @@ const Button = React.forwardRef<HTMLButtonElement, React.ButtonHTMLAttributes<HT
       <button
         ref={ref}
         className={cn(
-          'inline-flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed',
+          'inline-flex items-center justify-center rounded-lg transition-colors disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer',
           variants[variant],
           sizes[size],
           className
@@ -268,16 +277,248 @@ const MechanicProfile = ({ mechanicId, mechanics }: { mechanicId: string, mechan
   );
 };
 
+// --- Auth Modal ---
+
+function AuthModal({ isOpen, onClose, initialMode = 'login' }: { isOpen: boolean, onClose: () => void, initialMode?: 'login' | 'signup' }) {
+  const [isLogin, setIsLogin] = useState(initialMode === 'login');
+  
+  useEffect(() => {
+    setIsLogin(initialMode === 'login');
+  }, [initialMode, isOpen]);
+
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [resetSent, setResetSent] = useState(false);
+
+  const handleResetPassword = async () => {
+    if (!email) {
+      setError('Please enter your email address to reset password.');
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      await sendPasswordResetEmail(auth, email);
+      setResetSent(true);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleGoogleLogin = async () => {
+    const provider = new GoogleAuthProvider();
+    setLoading(true);
+    setError(null);
+    try {
+      await signInWithPopup(auth, provider);
+      onClose();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError(null);
+    try {
+      if (isLogin) {
+        await signInWithEmailAndPassword(auth, email, password);
+      } else {
+        const userCredential = await createUserWithEmailAndPassword(auth, email, password);
+        // Auto-admin logic for owner email
+        const role = email.toLowerCase() === 'princegogoekine@gmail.com' ? 'admin' : 'customer';
+        await setDoc(doc(db, 'users', userCredential.user.uid), {
+          uid: userCredential.user.uid,
+          email: email.toLowerCase(),
+          displayName: email.split('@')[0],
+          role: role,
+          isPremium: false,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+      }
+      onClose();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <AnimatePresence>
+      {isOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4">
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={onClose}
+            className="absolute inset-0 bg-slate-900/40 backdrop-blur-sm"
+          />
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95, y: 20 }}
+            animate={{ opacity: 1, scale: 1, y: 0 }}
+            exit={{ opacity: 0, scale: 0.95, y: 20 }}
+            className="relative w-full max-w-md bg-white dark:bg-slate-900 rounded-[2.5rem] shadow-2xl overflow-y-auto max-h-[90vh] border border-slate-100 dark:border-slate-800 scrollbar-hide"
+          >
+            <div className="p-8">
+              <div className="flex justify-between items-center mb-8">
+                <div className="flex items-center gap-2">
+                  <div className="bg-brand-600 p-2 rounded-xl">
+                    <Wrench className="text-white h-5 w-5" />
+                  </div>
+                  <span className="font-black text-xl tracking-tighter uppercase italic">AutoBit Rescue</span>
+                </div>
+                <button onClick={onClose} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full transition-colors">
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+
+              <div className="mb-8">
+                <h2 className="text-3xl font-black italic uppercase tracking-tighter leading-none">
+                  {isLogin ? "Welcome" : "Join the"} <span className="text-brand-600">Rescue</span>
+                </h2>
+                <p className="text-slate-500 text-sm mt-2 font-medium">
+                  {isLogin ? "Sign in to manage your vehicle recovery." : "Create an account for faster emergency response."}
+                </p>
+              </div>
+
+              {error && (
+                <div className="mb-6 p-4 bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900/30 rounded-2xl text-red-600 dark:text-red-400 text-xs font-bold flex items-center gap-2">
+                  <AlertTriangle className="h-4 w-4" />
+                  {error}
+                </div>
+              )}
+
+              {resetSent && (
+                <div className="mb-6 p-4 bg-green-50 dark:bg-green-900/20 border border-green-100 dark:border-green-900/30 rounded-2xl text-green-600 dark:text-green-400 text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4" />
+                  Password reset link sent! Check your inbox.
+                </div>
+              )}
+
+              <form onSubmit={handleSubmit} className="space-y-4">
+                <div className="space-y-2">
+                  <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Email Address</label>
+                  <div className="relative">
+                    <Input 
+                      type="email" 
+                      placeholder="name@example.com" 
+                      value={email}
+                      onChange={e => setEmail(e.target.value)}
+                      className="pl-12 h-14 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl"
+                      required
+                    />
+                    <Mail className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between ml-1">
+                    <label className="text-[10px] font-black uppercase tracking-widest text-slate-400">Password</label>
+                    {isLogin && (
+                      <button 
+                        type="button"
+                        onClick={handleResetPassword}
+                        className="text-[10px] font-black uppercase tracking-widest text-brand-600 hover:underline cursor-pointer"
+                      >
+                        Forgot?
+                      </button>
+                    )}
+                  </div>
+                  <div className="relative">
+                    <Input 
+                      type={showPassword ? "text" : "password"} 
+                      placeholder="••••••••" 
+                      value={password}
+                      onChange={e => setPassword(e.target.value)}
+                      className="pl-12 pr-12 h-14 bg-slate-50 dark:bg-slate-800 border-none rounded-2xl"
+                      required
+                    />
+                    <Lock className="absolute left-4 top-1/2 -translate-y-1/2 h-5 w-5 text-slate-400" />
+                    <button 
+                      type="button"
+                      onClick={() => setShowPassword(!showPassword)}
+                      className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-brand-600 transition-colors cursor-pointer"
+                    >
+                      {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
+                    </button>
+                  </div>
+                </div>
+
+                <Button 
+                  type="submit" 
+                  loading={loading}
+                  className="w-full h-14 rounded-2xl font-black uppercase tracking-widest shadow-lg shadow-brand-600/20"
+                >
+                  {isLogin ? "Sign In" : "Create Account"}
+                </Button>
+              </form>
+
+              <div className="relative my-8">
+                <div className="absolute inset-0 flex items-center">
+                  <div className="w-full border-t border-slate-100 dark:border-slate-800" />
+                </div>
+                <div className="relative flex justify-center text-[10px] font-black uppercase tracking-widest">
+                  <span className="bg-white dark:bg-slate-900 px-4 text-slate-400">Or continue with</span>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 gap-4">
+                <button 
+                  onClick={handleGoogleLogin}
+                  disabled={loading}
+                  className="flex items-center justify-center gap-3 w-full h-14 rounded-2xl border-2 border-slate-50 dark:border-slate-800 hover:bg-slate-50 dark:hover:bg-slate-800 transition-all font-bold text-sm cursor-pointer"
+                >
+                  <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" className="w-5 h-5" alt="Google" />
+                  Google Account
+                </button>
+              </div>
+
+              <div className="mt-8 text-center text-xs font-bold text-slate-500">
+                {isLogin ? "No account yet?" : "Already have an account?"}
+                <button 
+                  onClick={() => { setIsLogin(!isLogin); setResetSent(false); setError(null); }}
+                  className="ml-2 text-brand-600 hover:underline cursor-pointer"
+                >
+                  {isLogin ? "Sign Up Free" : "Log In Now"}
+                </button>
+              </div>
+
+              <div className="mt-6 p-4 bg-slate-50 dark:bg-slate-800/50 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
+                <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 text-center">
+                  Staff & Admin: Use your corporate credentials to access the command center.
+                </p>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 // --- Main App ---
 
 export default function App() {
   const [user, setUser] = useState<FirebaseUser | null>(null);
   const [profile, setProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const [view, setView] = useState<'home' | 'request' | 'history' | 'admin' | 'chat' | 'mechanics' | 'shop' | 'landing' | 'privacy' | 'terms' | 'premium' | 'settings'>('landing');
+  const [view, setView] = useState<'home' | 'request' | 'history' | 'admin' | 'chat' | 'mechanics' | 'shop' | 'landing' | 'privacy' | 'terms' | 'premium' | 'settings' | 'map'>('landing');
   const [requests, setRequests] = useState<ServiceRequest[]>([]);
   const [mechanics, setMechanics] = useState<Mechanic[]>([]);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authModalMode, setAuthModalMode] = useState<'login' | 'signup'>('login');
   const [currency, setCurrency] = useState({ symbol: '$', code: 'USD', rate: 1 });
   const [isDarkMode, setIsDarkMode] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -353,8 +594,14 @@ export default function App() {
     if (!user || !profile) return;
 
     let q;
-    if (profile.role === 'admin') {
+    if (profile.role === 'admin' || profile.role === 'staff') {
       q = query(collection(db, 'requests'), orderBy('createdAt', 'desc'));
+    } else if (profile.role === 'mechanic') {
+      q = query(
+        collection(db, 'requests'), 
+        where('mechanicId', '==', user.uid),
+        orderBy('createdAt', 'desc')
+      );
     } else {
       q = query(
         collection(db, 'requests'), 
@@ -399,13 +646,14 @@ export default function App() {
     };
   }, [user, profile]);
 
-  const handleLogin = async () => {
-    const provider = new GoogleAuthProvider();
-    try {
-      await signInWithPopup(auth, provider);
-    } catch (error) {
-      console.error("Login failed", error);
-    }
+  const handleLogin = () => {
+    setAuthModalMode('login');
+    setIsAuthModalOpen(true);
+  };
+
+  const handleSignUp = () => {
+    setAuthModalMode('signup');
+    setIsAuthModalOpen(true);
   };
 
   const handleLogout = () => signOut(auth);
@@ -431,25 +679,32 @@ export default function App() {
           </div>
 
             <div className="hidden md:flex items-center gap-6">
-            <button onClick={() => setView(user ? 'home' : 'landing')} className={cn("text-sm font-medium transition-colors", (view === 'home' || view === 'landing') ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>Home</button>
-            <button onClick={() => setView('request')} className={cn("text-sm font-medium transition-colors", view === 'request' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>Request Service</button>
-            <button onClick={() => setView('shop')} className={cn("text-sm font-medium transition-colors", view === 'shop' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>Spare Parts</button>
-            <button onClick={() => setView('premium')} className={cn("text-sm font-medium transition-colors", view === 'premium' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>Premium</button>
-            {user && (
+            {view === 'admin' || view === 'mechanics' ? (
               <>
-                <button onClick={() => setView('history')} className={cn("text-sm font-medium transition-colors", view === 'history' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>My Requests</button>
-                {(profile?.role === 'admin' || profile?.role === 'staff') && (
+                <button onClick={() => setView('admin')} className={cn("text-sm font-bold uppercase tracking-widest transition-colors", view === 'admin' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>Dashboard</button>
+                <button onClick={() => setView('mechanics')} className={cn("text-sm font-bold uppercase tracking-widest transition-colors", view === 'mechanics' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>Team Management</button>
+                <button onClick={() => setView('home')} className="text-sm font-bold uppercase tracking-widest text-slate-400 hover:text-slate-600 transition-colors">Return to Service</button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => setView(user ? 'home' : 'landing')} className={cn("text-sm font-medium transition-colors", (view === 'home' || view === 'landing') ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>Home</button>
+                <button onClick={() => setView('request')} className={cn("text-sm font-medium transition-colors", view === 'request' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>Request Service</button>
+                <button onClick={() => setView('shop')} className={cn("text-sm font-medium transition-colors", view === 'shop' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>Spare Parts</button>
+                {user && (
                   <>
-                    <button onClick={() => setView('admin')} className={cn("text-sm font-medium transition-colors flex items-center gap-1", view === 'admin' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>
-                      <LayoutDashboard className="h-4 w-4" />
-                      Staff Portal
-                    </button>
-                    <button onClick={() => setView('mechanics')} className={cn("text-sm font-medium transition-colors", view === 'mechanics' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>Mechanics</button>
+                    <button onClick={() => setView('history')} className={cn("text-sm font-medium transition-colors", view === 'history' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>My Requests</button>
+                    {(profile?.role === 'admin' || profile?.role === 'staff') && (
+                      <button onClick={() => setView('admin')} className="text-sm font-bold uppercase tracking-widest bg-brand-600/10 text-brand-600 px-3 py-1 rounded-lg hover:bg-brand-600 hover:text-white transition-all flex items-center gap-2">
+                        <ShieldCheck className="h-4 w-4" />
+                        Management
+                      </button>
+                    )}
                   </>
                 )}
+                <button onClick={() => setView('map')} className={cn("text-sm font-medium transition-colors", view === 'map' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>Live Map</button>
+                <button onClick={() => setView('chat')} className={cn("text-sm font-medium transition-colors", view === 'chat' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>AI Assistant</button>
               </>
             )}
-            <button onClick={() => setView('chat')} className={cn("text-sm font-medium transition-colors", view === 'chat' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>AI Assistant</button>
           </div>
 
           <div className="flex items-center gap-3">
@@ -462,11 +717,11 @@ export default function App() {
             {user ? (
               <div className="flex items-center gap-3">
                 <div className="hidden sm:block text-right">
-                  <p className="text-xs font-medium text-slate-900 dark:text-white flex items-center gap-1 justify-end">
-                    {user.displayName}
+                  <p className="text-xs font-bold text-slate-900 dark:text-white flex items-center gap-1 justify-end">
+                    {user.displayName || user.email?.split('@')[0]}
                     {profile?.isPremium && <Star className="h-3 w-3 text-amber-500 fill-current" />}
                   </p>
-                  <p className="text-[10px] text-slate-500 dark:text-slate-400 capitalize">{profile?.role}</p>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400 font-bold uppercase tracking-widest">{profile?.role}</p>
                 </div>
                 <button 
                   onClick={() => setView('settings')}
@@ -484,8 +739,8 @@ export default function App() {
               </div>
             ) : (
               <div className="flex items-center gap-2">
-                <Button onClick={handleLogin} variant="ghost" size="sm" className="hidden sm:inline-flex">Sign In</Button>
-                <Button onClick={handleLogin} size="sm">Sign Up</Button>
+                <Button onClick={handleLogin} variant="ghost" size="sm" className="hidden sm:inline-flex rounded-xl font-bold">Sign In</Button>
+                <Button onClick={handleSignUp} size="sm" className="rounded-xl font-black uppercase text-[10px] tracking-widest">Sign Up Free</Button>
               </div>
             )}
             <button 
@@ -507,19 +762,30 @@ export default function App() {
             exit={{ opacity: 0, y: -20 }}
             className="md:hidden absolute top-16 left-0 w-full bg-white dark:bg-slate-900 border-b border-slate-200 dark:border-slate-800 z-40 p-4 flex flex-col gap-4 shadow-xl"
           >
-            <button onClick={() => { setView(user ? 'home' : 'landing'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">Home</button>
-            <button onClick={() => { setView('request'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">Request Service</button>
-            <button onClick={() => { setView('shop'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">Spare Parts</button>
-            {user && (
+            {view === 'admin' || view === 'mechanics' ? (
               <>
-                <button onClick={() => { setView('settings'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">Profile Settings</button>
-                <button onClick={() => { setView('history'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">My Requests</button>
-                {(profile?.role === 'admin' || profile?.role === 'staff') && (
-                  <button onClick={() => { setView('admin'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">Staff Portal</button>
+                <button onClick={() => { setView('admin'); setIsMenuOpen(false); }} className="text-left py-2 font-bold uppercase tracking-widest">Dashboard</button>
+                <button onClick={() => { setView('mechanics'); setIsMenuOpen(false); }} className="text-left py-2 font-bold uppercase tracking-widest">Team Management</button>
+                <button onClick={() => { setView('home'); setIsMenuOpen(false); }} className="text-left py-2 font-bold uppercase tracking-widest text-slate-400">Return to Service</button>
+              </>
+            ) : (
+              <>
+                <button onClick={() => { setView(user ? 'home' : 'landing'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">Home</button>
+                <button onClick={() => { setView('request'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">Request Service</button>
+                <button onClick={() => { setView('shop'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">Spare Parts</button>
+                <button onClick={() => { setView('map'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">Live Map</button>
+                {user && (
+                  <>
+                    <button onClick={() => { setView('settings'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">Profile Settings</button>
+                    <button onClick={() => { setView('history'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">My Requests</button>
+                    {(profile?.role === 'admin' || profile?.role === 'staff') && (
+                      <button onClick={() => { setView('admin'); setIsMenuOpen(false); }} className="text-left py-2 font-bold text-brand-600 uppercase tracking-widest">Management</button>
+                    )}
+                  </>
                 )}
+                <button onClick={() => { setView('chat'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">AI Assistant</button>
               </>
             )}
-            <button onClick={() => { setView('chat'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">AI Assistant</button>
           </motion.div>
         )}
       </AnimatePresence>
@@ -529,8 +795,23 @@ export default function App() {
         {view === 'landing' && <LandingPageView setView={setView} handleLogin={handleLogin} />}
         {view === 'home' && <HomeView setView={setView} user={user} handleLogin={handleLogin} currency={currency} profile={profile} />}
         {view === 'request' && <RequestFormView setView={setView} user={user} />}
-        {view === 'history' && <HistoryView requests={requests} user={user} currency={currency} mechanics={mechanics} />}
-        {view === 'admin' && <StaffPortal requests={requests} mechanics={mechanics} currency={currency} profile={profile} />}
+        {view === 'history' && <HistoryView requests={requests} user={user} profile={profile} currency={currency} mechanics={mechanics} />}
+        {view === 'map' && <PublicMapView requests={requests} mechanics={mechanics} />}
+        {view === 'admin' && (
+          (profile?.role === 'admin' || profile?.role === 'staff') 
+            ? <StaffPortal requests={requests} mechanics={mechanics} currency={currency} profile={profile} />
+            : <div className="max-w-md mx-auto py-20 text-center space-y-6">
+                <div className="w-20 h-20 bg-red-100 dark:bg-red-900/20 rounded-full flex items-center justify-center mx-auto">
+                  <ShieldCheck className="h-10 w-10 text-red-600" />
+                </div>
+                <h2 className="text-3xl font-black italic uppercase italic tracking-tighter">Access Restricted</h2>
+                <p className="text-slate-500 font-medium">The Staff Command Center is only available to authorized personnel. Please sign in with your staff credentials or contact support if you believe this is an error.</p>
+                <div className="flex justify-center gap-4 pt-4">
+                  <Button onClick={() => setView('home')} variant="ghost">Back to Home</Button>
+                  <Button onClick={handleLogin}>Staff Sign In</Button>
+                </div>
+              </div>
+        )}
         {view === 'mechanics' && <MechanicManagementView mechanics={mechanics} />}
         {view === 'chat' && <AIChatView user={user} profile={profile} />}
         {view === 'settings' && <SettingsView profile={profile} />}
@@ -549,12 +830,19 @@ export default function App() {
           </div>
           <p className="text-sm text-slate-500 dark:text-slate-400">© 2026 AutoBit Rescue. All rights reserved.</p>
           <div className="flex gap-6">
+            <button onClick={() => setView('admin')} className="text-sm text-slate-500 dark:text-slate-400 hover:text-brand-600">Staff Portal</button>
             <button onClick={() => setView('privacy')} className="text-sm text-slate-500 dark:text-slate-400 hover:text-brand-600">Privacy</button>
             <button onClick={() => setView('terms')} className="text-sm text-slate-500 dark:text-slate-400 hover:text-brand-600">Terms</button>
             <a href="#" className="text-sm text-slate-500 dark:text-slate-400 hover:text-brand-600">Contact</a>
           </div>
         </div>
       </footer>
+
+      <AuthModal 
+        isOpen={isAuthModalOpen} 
+        onClose={() => setIsAuthModalOpen(false)} 
+        initialMode={authModalMode}
+      />
     </div>
   );
 }
@@ -1039,7 +1327,7 @@ function RequestFormView({ setView, user }: { setView: (v: any) => void, user: a
   );
 }
 
-function HistoryView({ requests, user, currency, mechanics }: { requests: ServiceRequest[], user: FirebaseUser | null, currency: any, mechanics: Mechanic[] }) {
+function HistoryView({ requests, user, profile, currency, mechanics }: { requests: ServiceRequest[], user: FirebaseUser | null, profile: UserProfile | null, currency: any, mechanics: Mechanic[] }) {
   return (
     <div className="space-y-8">
       <div>
@@ -1089,6 +1377,15 @@ function HistoryView({ requests, user, currency, mechanics }: { requests: Servic
                       <p className="text-slate-600 dark:text-slate-400 text-sm mt-1">{req.description}</p>
                     </div>
                   </div>
+
+                  {req.staffNotes && (profile?.role === 'mechanic' || profile?.role === 'staff' || profile?.role === 'admin') && (
+                    <div className="mt-4 p-4 bg-amber-50 dark:bg-amber-900/10 rounded-xl border border-amber-100 dark:border-amber-900/20">
+                      <p className="text-[10px] font-black text-amber-600 uppercase tracking-widest mb-1 flex items-center gap-2">
+                        <StickyNote className="h-3 w-3" /> Staff Instructions
+                      </p>
+                      <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{req.staffNotes}</p>
+                    </div>
+                  )}
 
                   <div className="text-right">
                     <p className="text-xs text-slate-500">Estimated Cost</p>
@@ -1295,17 +1592,72 @@ function AdminMapView({ requests, mechanics }: { requests: ServiceRequest[], mec
 }
 
 function StaffPortal({ requests, mechanics, currency, profile }: { requests: ServiceRequest[], mechanics: Mechanic[], currency: any, profile: UserProfile | null }) {
-  const [activeTab, setActiveTab] = useState<'dispatch' | 'map' | 'shifts' | 'users'>('dispatch');
+  const [activeTab, setActiveTab] = useState<'dispatch' | 'map' | 'shifts' | 'users' | 'inventory'>('dispatch');
   const [selectedRequest, setSelectedRequest] = useState<ServiceRequest | null>(null);
   const [selectedMechanicId, setSelectedMechanicId] = useState('');
   const [eta, setEta] = useState('');
   const [cost, setCost] = useState('');
+  const [staffNote, setStaffNote] = useState('');
   const [isDispatching, setIsDispatching] = useState(false);
   const [isSigningShift, setIsSigningShift] = useState(false);
   const [users, setUsers] = useState<UserProfile[]>([]);
+  const [inventory, setInventory] = useState<SparePart[]>([]);
+  const [isAddingItem, setIsAddingItem] = useState(false);
+  const [newItem, setNewItem] = useState({
+    name: '',
+    category: 'Engine' as any,
+    price: 0,
+    stock: 0,
+    image: '',
+    compatibility: ''
+  });
+
+  // Staff creation state
+  const [isCreatingStaff, setIsCreatingStaff] = useState(false);
+  const [isSubmittingStaff, setIsSubmittingStaff] = useState(false);
+  const [newStaffData, setNewStaffData] = useState({
+    email: '',
+    password: '',
+    displayName: '',
+    role: 'staff' as 'staff' | 'admin'
+  });
+
+  const handleCreateStaff = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newStaffData.email || !newStaffData.password) {
+      alert("Email and password are required.");
+      return;
+    }
+    setIsSubmittingStaff(true);
+    try {
+      const { getSecondaryAuth } = await import('./firebase');
+      const secondaryAuth = getSecondaryAuth();
+      const userCredential = await createUserWithEmailAndPassword(secondaryAuth, newStaffData.email, newStaffData.password);
+      
+      await setDoc(doc(db, 'users', userCredential.user.uid), {
+        uid: userCredential.user.uid,
+        email: newStaffData.email.toLowerCase(),
+        displayName: newStaffData.displayName || newStaffData.email.split('@')[0],
+        role: newStaffData.role,
+        isPremium: false,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      
+      await signOut(secondaryAuth);
+      setIsCreatingStaff(false);
+      setNewStaffData({ email: '', password: '', displayName: '', role: 'staff' });
+      alert("New team member added successfully!");
+    } catch (error) {
+      console.error("Staff creation failed", error);
+      alert("Creation failed: " + (error as Error).message);
+    } finally {
+      setIsSubmittingStaff(false);
+    }
+  };
 
   useEffect(() => {
-    if (activeTab === 'users' && profile?.role === 'admin') {
+    if (activeTab === 'users' && (profile?.role === 'admin' || profile?.role === 'staff')) {
       const q = query(collection(db, 'users'), orderBy('createdAt', 'desc'));
       const unsubscribe = onSnapshot(q, (snapshot) => {
         setUsers(snapshot.docs.map(doc => ({ ...doc.data() } as UserProfile)));
@@ -1313,6 +1665,40 @@ function StaffPortal({ requests, mechanics, currency, profile }: { requests: Ser
       return () => unsubscribe();
     }
   }, [activeTab, profile]);
+
+  useEffect(() => {
+    if (activeTab === 'inventory') {
+      const q = query(collection(db, 'spare-parts'), orderBy('name', 'asc'));
+      const unsubscribe = onSnapshot(q, (snapshot) => {
+        setInventory(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as SparePart)));
+      });
+      return () => unsubscribe();
+    }
+  }, [activeTab]);
+
+  const handleAddItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      await addDoc(collection(db, 'spare-parts'), {
+        ...newItem,
+        rating: 5,
+        reviews: 0,
+        createdAt: new Date().toISOString()
+      });
+      setIsAddingItem(false);
+      setNewItem({ name: '', category: 'Engine', price: 0, stock: 0, image: '', compatibility: '' });
+    } catch (error) {
+      console.error("Failed to add item", error);
+    }
+  };
+
+  const updateInventoryStock = async (itemId: string, newStock: number) => {
+    try {
+      await updateDoc(doc(db, 'spare-parts', itemId), { stock: newStock });
+    } catch (error) {
+      console.error("Stock update failed", error);
+    }
+  };
 
   const handleAssign = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1328,12 +1714,14 @@ function StaffPortal({ requests, mechanics, currency, profile }: { requests: Ser
         mechanicName: mechanic?.name || 'Unknown',
         eta,
         estimatedCost: Number(cost),
+        staffNotes: staffNote,
         updatedAt: new Date().toISOString()
       });
       setSelectedRequest(null);
       setSelectedMechanicId('');
       setEta('');
       setCost('');
+      setStaffNote('');
     } catch (error) {
       console.error("Assignment failed", error);
       handleFirestoreError(error, OperationType.UPDATE, `requests/${selectedRequest.id}`);
@@ -1350,6 +1738,18 @@ function StaffPortal({ requests, mechanics, currency, profile }: { requests: Ser
       });
     } catch (error) {
       console.error("Status update failed", error);
+      handleFirestoreError(error, OperationType.UPDATE, `requests/${requestId}`);
+    }
+  };
+
+  const updateNote = async (requestId: string, note: string) => {
+    try {
+      await updateDoc(doc(db, 'requests', requestId), {
+        staffNotes: note,
+        updatedAt: new Date().toISOString()
+      });
+    } catch (error) {
+      console.error("Note update failed", error);
       handleFirestoreError(error, OperationType.UPDATE, `requests/${requestId}`);
     }
   };
@@ -1399,9 +1799,13 @@ function StaffPortal({ requests, mechanics, currency, profile }: { requests: Ser
             <span className="text-xs font-black uppercase tracking-widest">{profile?.role} AUTHORIZED</span>
           </div>
           <h2 className="text-5xl font-black tracking-tighter italic uppercase leading-tight">
-            Staff <span className="text-brand-600">Portal</span>
+            Management <span className="text-brand-600">Console</span>
           </h2>
-          <div className="flex flex-wrap gap-4 mt-6">
+          <p className="text-slate-500 font-medium mt-2 max-w-sm">Strategic operations, inventory control, and tactical team management for Port Harcourt's #1 rescue network.</p>
+          <div className="flex flex-wrap gap-4 mt-8">
+            <div className="w-full mb-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Tactical Operations</p>
+            </div>
             <button 
               onClick={() => setActiveTab('dispatch')}
               className={cn(
@@ -1429,7 +1833,20 @@ function StaffPortal({ requests, mechanics, currency, profile }: { requests: Ser
             >
               Shift Center
             </button>
-            {profile?.role === 'admin' && (
+
+            <div className="w-full mt-4 mb-2">
+              <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Executive Management</p>
+            </div>
+            <button 
+              onClick={() => setActiveTab('inventory')}
+              className={cn(
+                "px-6 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all",
+                activeTab === 'inventory' ? "bg-brand-600 text-white shadow-xl shadow-brand-500/20" : "bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-brand-600"
+              )}
+            >
+              Store Inventory
+            </button>
+            {(profile?.role === 'admin' || profile?.role === 'staff') && (
               <button 
                 onClick={() => setActiveTab('users')}
                 className={cn(
@@ -1437,7 +1854,7 @@ function StaffPortal({ requests, mechanics, currency, profile }: { requests: Ser
                   activeTab === 'users' ? "bg-brand-600 text-white shadow-xl shadow-brand-500/20" : "bg-slate-100 dark:bg-slate-800 text-slate-500 hover:text-brand-600"
                 )}
               >
-                Staff Management
+                Personnel Management
               </button>
             )}
           </div>
@@ -1516,14 +1933,142 @@ function StaffPortal({ requests, mechanics, currency, profile }: { requests: Ser
               </div>
             </Card>
           </motion.div>
+        ) : activeTab === 'inventory' ? (
+          <motion.div
+            key="inventory"
+            initial={{ opacity: 0, y: 10 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -10 }}
+            className="space-y-6"
+          >
+            <div className="flex justify-between items-center">
+              <h3 className="text-2xl font-black italic uppercase tracking-tighter">System <span className="text-brand-600">Inventory</span></h3>
+              <Button onClick={() => setIsAddingItem(true)} size="sm" className="rounded-xl">
+                <Plus className="mr-2 h-4 w-4" />
+                Add Spare Part
+              </Button>
+            </div>
+
+            <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {inventory.map((item) => (
+                <Card key={item.id} className="p-4 flex flex-col gap-4">
+                  <div className="flex gap-4">
+                    <img src={item.image} alt={item.name} className="w-16 h-16 rounded-lg object-cover bg-slate-100" />
+                    <div className="flex-1">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-brand-600 mb-1">{item.category}</p>
+                      <h4 className="font-bold text-sm leading-tight">{item.name}</h4>
+                      <p className="text-xs text-slate-500 mt-1">{item.compatibility}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between pt-4 border-t border-slate-100 dark:border-slate-800">
+                    <div className="text-left">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Stock Level</p>
+                      <div className="flex items-center gap-2">
+                        <Input 
+                          type="number" 
+                          value={item.stock} 
+                          onChange={(e) => updateInventoryStock(item.id!, parseInt(e.target.value))}
+                          className="w-16 h-8 text-xs text-center"
+                        />
+                        <span className={cn(
+                          "text-[10px] font-bold px-2 py-0.5 rounded",
+                          item.stock > 10 ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"
+                        )}>
+                          {item.stock > 10 ? "Optimal" : "Low Stock"}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Unit Price</p>
+                      <p className="font-black text-brand-600">{currency.symbol}{item.price}</p>
+                    </div>
+                  </div>
+                </Card>
+              ))}
+            </div>
+
+            <AnimatePresence>
+              {isAddingItem && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="w-full max-w-lg"
+                  >
+                    <Card className="p-8">
+                      <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-2xl font-black italic uppercase tracking-tighter">Add <span className="text-brand-600">New Item</span></h3>
+                        <button onClick={() => setIsAddingItem(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full"><X className="h-5 w-5" /></button>
+                      </div>
+                      <form onSubmit={handleAddItem} className="grid grid-cols-2 gap-4">
+                        <div className="col-span-2 space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Part Name</label>
+                          <Input required value={newItem.name} onChange={e => setNewItem({...newItem, name: e.target.value})} placeholder="e.g. Premium Brake Pads" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Category</label>
+                          <select 
+                            className="w-full h-10 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-sm"
+                            value={newItem.category}
+                            onChange={e => setNewItem({...newItem, category: e.target.value as any})}
+                          >
+                            <option value="Engine">Engine</option>
+                            <option value="Brakes">Brakes</option>
+                            <option value="Body">Body</option>
+                            <option value="Electronics">Electronics</option>
+                            <option value="Tires">Tires</option>
+                          </select>
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Compatibility</label>
+                          <Input value={newItem.compatibility} onChange={e => setNewItem({...newItem, compatibility: e.target.value})} placeholder="e.g. All Sedan models" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Price ({currency.code})</label>
+                          <Input type="number" required value={newItem.price} onChange={e => setNewItem({...newItem, price: parseFloat(e.target.value)})} />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Initial Stock</label>
+                          <Input type="number" required value={newItem.stock} onChange={e => setNewItem({...newItem, stock: parseInt(e.target.value)})} />
+                        </div>
+                        <div className="col-span-2 space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Image URL</label>
+                          <Input value={newItem.image} onChange={e => setNewItem({...newItem, image: e.target.value})} placeholder="https://..." />
+                        </div>
+                        <Button type="submit" className="col-span-2 h-14 rounded-2xl font-black uppercase tracking-widest mt-4">Registry To Inventory</Button>
+                      </form>
+                    </Card>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
+          </motion.div>
         ) : activeTab === 'users' ? (
           <motion.div
             key="users"
             initial={{ opacity: 0, y: 10 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -10 }}
-            className="space-y-4"
+            className="space-y-6"
           >
+            <div className="flex justify-between items-center">
+              <div>
+                <h3 className="text-2xl font-black italic uppercase tracking-tighter">Account <span className="text-brand-600">Management</span></h3>
+                <p className="text-xs text-slate-500 mt-1">Manage access privileges and onboard new personnel.</p>
+              </div>
+              {profile?.role === 'admin' && (
+                <Button onClick={() => setIsCreatingStaff(true)} size="sm" className="rounded-xl">
+                  <Plus className="mr-2 h-4 w-4" />
+                  Onboard Staff
+                </Button>
+              )}
+            </div>
+
+            <div className="p-6 bg-brand-50 dark:bg-brand-900/10 rounded-3xl border border-brand-100 dark:border-brand-900/20">
+              <h4 className="font-black uppercase tracking-widest text-sm text-brand-600 mb-1">Onboarding Interface</h4>
+              <p className="text-sm text-slate-600 dark:text-slate-400">Admins can create new staff accounts directly. Customers can also be elevated to staff status from the directory below.</p>
+            </div>
             <div className="grid gap-4">
               {users.map((u) => (
                 <Card key={u.uid} className="p-6 dark:bg-slate-900 border-2 border-slate-100 dark:border-slate-800">
@@ -1554,6 +2099,54 @@ function StaffPortal({ requests, mechanics, currency, profile }: { requests: Ser
                 </Card>
               ))}
             </div>
+
+            <AnimatePresence>
+              {isCreatingStaff && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-sm">
+                  <motion.div 
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    className="w-full max-w-md"
+                  >
+                    <Card className="p-8">
+                      <div className="flex justify-between items-center mb-6">
+                        <h3 className="text-2xl font-black italic uppercase tracking-tighter">Onboard <span className="text-brand-600">Personnel</span></h3>
+                        <button onClick={() => setIsCreatingStaff(false)} className="p-2 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-full"><X className="h-5 w-5" /></button>
+                      </div>
+                      <form onSubmit={handleCreateStaff} className="space-y-4">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Full Name</label>
+                          <Input required value={newStaffData.displayName} onChange={e => setNewStaffData({...newStaffData, displayName: e.target.value})} placeholder="e.g. Samuel Okon" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Email Address</label>
+                          <Input type="email" required value={newStaffData.email} onChange={e => setNewStaffData({...newStaffData, email: e.target.value})} placeholder="staff@autobit.com" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Temporary Password</label>
+                          <Input type="password" required value={newStaffData.password} onChange={e => setNewStaffData({...newStaffData, password: e.target.value})} placeholder="••••••••" />
+                        </div>
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-black uppercase tracking-widest text-slate-400 ml-1">Initial Clearance Role</label>
+                          <select 
+                            className="w-full h-10 rounded-lg border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-900 px-3 text-sm"
+                            value={newStaffData.role}
+                            onChange={e => setNewStaffData({...newStaffData, role: e.target.value as any})}
+                          >
+                            <option value="staff">Operational Staff</option>
+                            <option value="admin">System Administrator</option>
+                          </select>
+                        </div>
+                        <Button type="submit" disabled={isSubmittingStaff} className="w-full h-14 rounded-2xl font-black uppercase tracking-widest mt-4">
+                          {isSubmittingStaff ? <Loader2 className="h-5 w-5 animate-spin" /> : "Registry Personnel"}
+                        </Button>
+                      </form>
+                    </Card>
+                  </motion.div>
+                </div>
+              )}
+            </AnimatePresence>
           </motion.div>
         ) : activeTab === 'dispatch' ? (
           <motion.div 
@@ -1626,6 +2219,15 @@ function StaffPortal({ requests, mechanics, currency, profile }: { requests: Ser
                         <label className="text-sm font-medium">Estimated Cost (USD)</label>
                         <Input type="number" placeholder="50" value={cost} onChange={e => setCost(e.target.value)} required />
                       </div>
+                      <div className="space-y-2">
+                        <label className="text-sm font-medium text-slate-500">Assignment Notes for Mechanic (Optional)</label>
+                        <Textarea 
+                          placeholder="Special instructions for the mechanic..." 
+                          value={staffNote} 
+                          onChange={e => setStaffNote(e.target.value)}
+                          className="text-xs"
+                        />
+                      </div>
                       <Button type="submit" className="w-full" loading={isDispatching}>
                         Dispatch Now
                       </Button>
@@ -1641,6 +2243,16 @@ function StaffPortal({ requests, mechanics, currency, profile }: { requests: Ser
                           <span className="text-slate-500">Mechanic</span>
                           <span className="font-bold">{selectedRequest.mechanicName}</span>
                         </div>
+                      </div>
+
+                      <div className="space-y-2">
+                        <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Note to Mechanic</p>
+                        <Textarea 
+                          defaultValue={selectedRequest.staffNotes || ''}
+                          onBlur={(e) => updateNote(selectedRequest.id!, e.target.value)}
+                          placeholder="Add or update instructions..."
+                          className="text-xs bg-white dark:bg-slate-900 border-dashed"
+                        />
                       </div>
 
                       <div className="space-y-2">
@@ -2292,7 +2904,10 @@ function LandingPageView({ setView, handleLogin }: { setView: (v: any) => void, 
               </motion.div>
             ))}
             <div className="pt-4 text-center">
-              <button className="text-xs font-black uppercase tracking-widest text-brand-600 hover:text-brand-700 transition-colors flex items-center justify-center gap-2 mx-auto">
+              <button 
+                onClick={() => setView('map')}
+                className="text-xs font-black uppercase tracking-widest text-brand-600 hover:text-brand-700 transition-colors flex items-center justify-center gap-2 mx-auto"
+              >
                 <Play className="h-3 w-3 fill-current" />
                 View Full Live Map
               </button>
@@ -2659,7 +3274,10 @@ function LandingPageView({ setView, handleLogin }: { setView: (v: any) => void, 
       {/* Floating Support Button */}
       <div className="fixed bottom-8 right-8 z-[100] group">
         <div className="absolute -inset-4 bg-brand-500/20 rounded-full blur-xl group-hover:bg-brand-500/40 transition-all opacity-0 group-hover:opacity-100" />
-        <button className="relative w-16 h-16 bg-brand-600 hover:bg-brand-700 text-white rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 group">
+        <button 
+          onClick={() => setView('chat')}
+          className="relative w-16 h-16 bg-brand-600 hover:bg-brand-700 text-white rounded-full shadow-2xl flex items-center justify-center transition-all hover:scale-110 active:scale-95 group cursor-pointer"
+        >
           <MessageSquare className="h-7 w-7" />
           <span className="absolute right-full mr-4 bg-slate-900 text-white text-[10px] font-black uppercase tracking-widest px-3 py-1.5 rounded-lg opacity-0 group-hover:opacity-100 transition-all pointer-events-none whitespace-nowrap shadow-xl">
             Live Support Online
@@ -3139,6 +3757,127 @@ function SettingsView({ profile }: { profile: UserProfile | null }) {
           </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+function PublicMapView({ requests, mechanics }: { requests: ServiceRequest[], mechanics: Mechanic[] }) {
+  const activeRequests = requests.filter(r => r.status !== 'completed');
+  
+  return (
+    <div className="space-y-6">
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
+        <div>
+          <h2 className="text-5xl font-black tracking-tighter italic uppercase leading-none">
+            Live <span className="text-brand-600">Rescue</span> Map
+          </h2>
+          <p className="text-slate-500 mt-2 font-medium">Real-time status of rescue operations and mobile workshops across the city.</p>
+        </div>
+        <div className="flex gap-4">
+          <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl">
+             <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+             <span className="text-[10px] font-black uppercase tracking-widest">{activeRequests.length} Active Jobs</span>
+          </div>
+          <div className="flex items-center gap-2 px-4 py-2 bg-slate-100 dark:bg-slate-800 rounded-xl">
+             <div className="w-2 h-2 rounded-full bg-green-500" />
+             <span className="text-[10px] font-black uppercase tracking-widest">{mechanics.length} Pro-Mechanics</span>
+          </div>
+        </div>
+      </div>
+
+      <Card className="h-[700px] rounded-[2.5rem] border-4 border-white dark:border-slate-800 shadow-2xl relative overflow-hidden">
+        <MapContainer 
+          center={[4.8156, 7.0498]} 
+          zoom={13} 
+          className="h-full w-full z-0"
+        >
+          <TileLayer
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+          />
+          
+          {mechanics.map((mechanic) => (
+            mechanic.location && (
+              <Marker 
+                key={mechanic.uid} 
+                position={[mechanic.location.latitude, mechanic.location.longitude]}
+                icon={L.divIcon({
+                  html: `<div class="bg-blue-600 p-2 rounded-lg shadow-lg border-2 border-white transform -translate-x-1/2 -translate-y-1/2"><svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z"></path></svg></div>`,
+                  className: '',
+                  iconSize: [32, 32],
+                  iconAnchor: [16, 16]
+                })}
+              >
+                <Popup className="custom-popup">
+                  <div className="p-2 min-w-[150px]">
+                    <p className="text-[10px] font-black uppercase text-blue-600 mb-1">Mobile Workshop</p>
+                    <p className="font-bold text-sm">{mechanic.name}</p>
+                    <div className="flex items-center gap-1 mt-1">
+                      <Star className="h-3 w-3 text-amber-500 fill-current" />
+                      <span className="text-xs font-bold">4.9</span>
+                    </div>
+                  </div>
+                </Popup>
+              </Marker>
+            )
+          ))}
+
+          {activeRequests.map((req) => (
+            <Marker 
+              key={req.id} 
+              position={[req.location.latitude, req.location.longitude]}
+              icon={L.divIcon({
+                html: `<div class="bg-brand-600 p-2 rounded-lg shadow-lg border-2 border-white transform -translate-x-1/2 -translate-y-1/2 animate-bounce"><svg class="w-4 h-4 text-white" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12" y2="17.01"></line></svg></div>`,
+                className: '',
+                iconSize: [32, 32],
+                iconAnchor: [16, 16]
+              })}
+            >
+              <Popup>
+                <div className="p-2 min-w-[150px]">
+                  <p className="text-[10px] font-black uppercase text-brand-600 mb-1">Rescue Operation</p>
+                  <p className="font-bold text-sm capitalize">{req.carDetails.make} {req.carDetails.model}</p>
+                  <div className={cn(
+                    "inline-block px-2 py-0.5 rounded-full text-[8px] font-black uppercase tracking-widest mt-2",
+                    req.status === 'pending' ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"
+                  )}>
+                    {req.status}
+                  </div>
+                </div>
+              </Popup>
+            </Marker>
+          ))}
+        </MapContainer>
+        
+        <div className="absolute top-6 left-6 p-4 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md rounded-2xl border border-slate-100 dark:border-slate-800 shadow-xl z-[1000] max-w-xs pointer-events-none">
+          <p className="text-[10px] font-black uppercase tracking-tight text-slate-400 mb-2 underline decoration-brand-500 decoration-2">Tactical Overlay</p>
+          <p className="text-xs font-bold text-slate-600 dark:text-slate-300">Live visualization of rescue assets and disabled vehicles. Customer privacy is protected via coordinate fuzzing.</p>
+        </div>
+      </Card>
+      
+      <div className="grid md:grid-cols-3 gap-6">
+        <div className="p-6 bg-slate-50 dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800">
+           <div className="w-10 h-10 rounded-xl bg-brand-500/10 flex items-center justify-center mb-4">
+             <Clock className="h-5 w-5 text-brand-600" />
+           </div>
+           <h4 className="font-bold mb-2">Real-time Pulse</h4>
+           <p className="text-xs text-slate-500 leading-relaxed font-medium">Engine updates every 30 seconds to ensure the most accurate arrival estimates across the network.</p>
+        </div>
+        <div className="p-6 bg-slate-50 dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800">
+           <div className="w-10 h-10 rounded-xl bg-brand-500/10 flex items-center justify-center mb-4">
+             <MapPin className="h-5 w-5 text-brand-600" />
+           </div>
+           <h4 className="font-bold mb-2">Network Coverage</h4>
+           <p className="text-xs text-slate-500 leading-relaxed font-medium">Currently covering Port Harcourt with regional expansions planned into Owerri and Yenagoa.</p>
+        </div>
+        <div className="p-6 bg-slate-50 dark:bg-slate-900 rounded-3xl border border-slate-100 dark:border-slate-800">
+           <div className="w-10 h-10 rounded-xl bg-brand-500/10 flex items-center justify-center mb-4">
+             <AlertTriangle className="h-5 w-5 text-brand-600" />
+           </div>
+           <h4 className="font-bold mb-2">Emergency Hubs</h4>
+           <p className="text-xs text-slate-500 leading-relaxed font-medium">Mobile units are strategically positioned near major arteries like Aba Road and East-West Road.</p>
+        </div>
+      </div>
     </div>
   );
 }

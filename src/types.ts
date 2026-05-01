@@ -47,6 +47,7 @@ export interface SparePart {
   description: string;
   stock: number;
   image: string;
+  compatibility?: string;
   createdAt: string;
 }
 
@@ -66,6 +67,7 @@ export interface ServiceRequest {
   estimatedCost?: number;
   paymentStatus?: 'unpaid' | 'paid' | 'pending';
   paymentReference?: string;
+  staffNotes?: string;
   createdAt: string;
   updatedAt: string;
 }

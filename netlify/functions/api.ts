@@ -54,8 +54,8 @@ router.post("/chat", async (req: any, res: any) => {
   }
 
   try {
-    const genAI = new GoogleGenAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const genAI = new GoogleGenAI({ apiKey });
+    const model = (genAI as any).getGenerativeModel({ model: "gemini-1.5-flash" });
     
     // Inject system prompt if it's a new chat or at start
     const chat = model.startChat({

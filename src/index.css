@@ -27,6 +27,15 @@
   .dark body {
     @apply bg-slate-950 text-slate-50;
   }
+
+  button, 
+  [role="button"],
+  select,
+  input[type="submit"],
+  input[type="button"],
+  input[type="reset"] {
+    cursor: pointer;
+  }
 }
 
 @layer utilities {

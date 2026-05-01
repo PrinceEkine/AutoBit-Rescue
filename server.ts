@@ -3,6 +3,7 @@ import { createServer as createViteServer } from "vite";
 import path from "path";
 import { fileURLToPath } from "url";
 import dotenv from "dotenv";
+import { GoogleGenAI } from "@google/genai";
 
 dotenv.config();
 
@@ -59,8 +60,8 @@ async function startServer() {
     }
 
     try {
-      const genAI = new GoogleGenAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+      const genAI = new GoogleGenAI({ apiKey });
+      const model = (genAI as any).getGenerativeModel({ model: "gemini-1.5-flash" });
       
       const chat = model.startChat({
         history: history || [],
