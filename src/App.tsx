@@ -702,7 +702,7 @@ export default function App() {
                   </>
                 )}
                 <button onClick={() => setView('map')} className={cn("text-sm font-medium transition-colors", view === 'map' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>Live Map</button>
-                <button onClick={() => setView('chat')} className={cn("text-sm font-medium transition-colors", view === 'chat' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>AI Assistant</button>
+                <button onClick={() => setView('chat')} className={cn("text-sm font-medium transition-colors", view === 'chat' ? "text-brand-600" : "text-slate-600 dark:text-slate-400 hover:text-brand-600")}>Support Center</button>
               </>
             )}
           </div>
@@ -783,7 +783,7 @@ export default function App() {
                     )}
                   </>
                 )}
-                <button onClick={() => { setView('chat'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">AI Assistant</button>
+                <button onClick={() => { setView('chat'); setIsMenuOpen(false); }} className="text-left py-2 font-medium">Support Center</button>
               </>
             )}
           </motion.div>
@@ -812,7 +812,7 @@ export default function App() {
                 </div>
               </div>
         )}
-        {view === 'mechanics' && <MechanicManagementView mechanics={mechanics} />}
+        {view === 'mechanics' && <MechanicManagementView mechanics={mechanics} profile={profile} />}
         {view === 'chat' && <AIChatView user={user} profile={profile} />}
         {view === 'settings' && <SettingsView profile={profile} />}
         {view === 'shop' && <SparePartsShopView currency={currency} isAdmin={profile?.role === 'admin'} />}
@@ -988,8 +988,27 @@ function RequestFormView({ setView, user }: { setView: (v: any) => void, user: a
 
   useEffect(() => {
     if (navigator.geolocation) {
-      navigator.geolocation.getCurrentPosition((pos) => {
-        setLocation({ lat: pos.coords.latitude, lng: pos.coords.longitude });
+      navigator.geolocation.getCurrentPosition(async (pos) => {
+        const { latitude, longitude } = pos.coords;
+        setLocation({ lat: latitude, lng: longitude });
+        
+        // Reverse Geocoding to autofill address
+        try {
+          const res = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`);
+          const data = await res.json();
+          if (data && data.address) {
+            const neighborhood = data.address.suburb || data.address.neighbourhood || data.address.residential || data.address.city_district || "";
+            const road = data.address.road || "";
+            const houseNumber = data.address.house_number || "";
+            
+            setFormData(prev => ({
+              ...prev,
+              address: neighborhood ? `${neighborhood}${road ? ', ' + road : ''}${houseNumber ? ' No. ' + houseNumber : ''}` : (road || prev.address)
+            }));
+          }
+        } catch (err) {
+          console.warn("Reverse geocoding failed", err);
+        }
       }, (err) => {
         console.warn("Geolocation denied", err);
       });
@@ -2067,7 +2086,11 @@ function StaffPortal({ requests, mechanics, currency, profile }: { requests: Ser
 
             <div className="p-6 bg-brand-50 dark:bg-brand-900/10 rounded-3xl border border-brand-100 dark:border-brand-900/20">
               <h4 className="font-black uppercase tracking-widest text-sm text-brand-600 mb-1">Onboarding Interface</h4>
-              <p className="text-sm text-slate-600 dark:text-slate-400">Admins can create new staff accounts directly. Customers can also be elevated to staff status from the directory below.</p>
+              <p className="text-sm text-slate-600 dark:text-slate-400">
+                {profile?.role === 'admin' 
+                  ? "Admins can create new staff accounts directly. Customers can also be elevated to staff status from the directory below."
+                  : "Personnel directory. Please contact a system administrator for role promotions or new onboarding."}
+              </p>
             </div>
             <div className="grid gap-4">
               {users.map((u) => (
@@ -2083,16 +2106,22 @@ function StaffPortal({ requests, mechanics, currency, profile }: { requests: Ser
                       </div>
                     </div>
                     <div className="flex items-center gap-4">
-                      <select 
-                        className="h-10 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 border-none text-[10px] font-black uppercase tracking-widest cursor-pointer"
-                        value={u.role}
-                        onChange={(e) => updateUserRole(u.uid, e.target.value as UserRole)}
-                      >
-                        <option value="customer">Customer</option>
-                        <option value="staff">Staff</option>
-                        <option value="admin">Admin</option>
-                        <option value="mechanic">Mechanic</option>
-                      </select>
+                      {profile?.role === 'admin' ? (
+                        <select 
+                          className="h-10 px-4 rounded-xl bg-slate-100 dark:bg-slate-800 border-none text-[10px] font-black uppercase tracking-widest cursor-pointer"
+                          value={u.role}
+                          onChange={(e) => updateUserRole(u.uid, e.target.value as UserRole)}
+                        >
+                          <option value="customer">Customer</option>
+                          <option value="staff">Staff</option>
+                          <option value="admin">Admin</option>
+                          <option value="mechanic">Mechanic</option>
+                        </select>
+                      ) : (
+                        <span className="px-3 py-1 bg-slate-100 dark:bg-slate-800 rounded-lg text-[10px] font-black uppercase tracking-widest text-slate-500">
+                          {u.role}
+                        </span>
+                      )}
                       <div className={cn("w-2 h-2 rounded-full", u.isOnline ? "bg-green-500 shadow-[0_0_10px_rgba(34,197,94,0.5)]" : "bg-slate-300")} />
                     </div>
                   </div>
@@ -2322,7 +2351,7 @@ function StaffPortal({ requests, mechanics, currency, profile }: { requests: Ser
   );
 }
 
-function MechanicManagementView({ mechanics }: { mechanics: Mechanic[] }) {
+function MechanicManagementView({ mechanics, profile }: { mechanics: Mechanic[], profile: UserProfile | null }) {
   const [isAdding, setIsAdding] = useState(false);
   const [formData, setFormData] = useState({
     name: '',
@@ -2334,6 +2363,10 @@ function MechanicManagementView({ mechanics }: { mechanics: Mechanic[] }) {
 
   const handleAddMechanic = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (profile?.role !== 'admin') {
+      alert("Unauthorized: Only admins can add mechanics.");
+      return;
+    }
     try {
       const newMechanicRef = doc(collection(db, 'mechanics'));
       await setDoc(newMechanicRef, {
@@ -2358,10 +2391,12 @@ function MechanicManagementView({ mechanics }: { mechanics: Mechanic[] }) {
           <h2 className="text-3xl font-bold">Mechanic Management</h2>
           <p className="text-slate-600 mt-2">View and manage your team of expert mechanics.</p>
         </div>
-        <Button onClick={() => setIsAdding(true)}>
-          <User className="mr-2 h-4 w-4" />
-          Add Mechanic
-        </Button>
+        {profile?.role === 'admin' && (
+          <Button onClick={() => setIsAdding(true)}>
+            <User className="mr-2 h-4 w-4" />
+            Add Mechanic
+          </Button>
+        )}
       </div>
 
       <AnimatePresence>
@@ -2756,6 +2791,50 @@ function PaymentButton({ amount, email, requestId }: { amount: number, email: st
   );
 }
 
+function TypingText({ phrases }: { phrases: string[] }) {
+  const [currentPhraseIndex, setCurrentPhraseIndex] = useState(0);
+  const [currentText, setCurrentText] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [typingSpeed, setTypingSpeed] = useState(150);
+
+  useEffect(() => {
+    const handleTyping = () => {
+      const fullText = phrases[currentPhraseIndex];
+      
+      if (!isDeleting) {
+        setCurrentText(fullText.substring(0, currentText.length + 1));
+        setTypingSpeed(150);
+        
+        if (currentText === fullText) {
+          setTimeout(() => setIsDeleting(true), 2000);
+        }
+      } else {
+        setCurrentText(fullText.substring(0, currentText.length - 1));
+        setTypingSpeed(100);
+        
+        if (currentText === "") {
+          setIsDeleting(false);
+          setCurrentPhraseIndex((prev) => (prev + 1) % phrases.length);
+        }
+      }
+    };
+
+    const timer = setTimeout(handleTyping, typingSpeed);
+    return () => clearTimeout(timer);
+  }, [currentText, isDeleting, phrases, currentPhraseIndex, typingSpeed]);
+
+  return (
+    <span className="inline-block min-h-[0.9em]">
+      {currentText}
+      <motion.span 
+        animate={{ opacity: [1, 0] }}
+        transition={{ duration: 0.5, repeat: Infinity, ease: "linear" }}
+        className="ml-1 border-r-4 border-white inline-block h-[0.8em] align-middle"
+      />
+    </span>
+  );
+}
+
 function LandingPageView({ setView, handleLogin }: { setView: (v: any) => void, handleLogin: () => void }) {
   const [activeTab, setActiveTab] = useState(0);
   const [activeFaq, setActiveFaq] = useState<number | null>(null);
@@ -2987,7 +3066,7 @@ function LandingPageView({ setView, handleLogin }: { setView: (v: any) => void, 
                   <motion.img 
                     src={
                       activeTab === 0 
-                        ? "https://images.unsplash.com/photo-1549317661-bd32c8ce0db2?auto=format&fit=crop&q=80&w=800"
+                        ? "/src/assets/images/regenerated_image_1777803787257.jpg"
                         : activeTab === 1
                         ? "https://images.unsplash.com/photo-1486262715619-67b85e0b08d3?auto=format&fit=crop&q=80&w=800"
                         : "https://images.unsplash.com/photo-1530046339160-ce3e5b0c7a2f?auto=format&fit=crop&q=80&w=800"
@@ -3017,10 +3096,10 @@ function LandingPageView({ setView, handleLogin }: { setView: (v: any) => void, 
           
           <div className="grid md:grid-cols-4 gap-8">
             {[
-              { label: "Brake Pads", img: "https://images.unsplash.com/photo-1635773054018-097c03350961?auto=format&fit=crop&q=80&w=800" },
-              { label: "Tires", img: "https://images.unsplash.com/photo-1541899481282-d53bffe3c35d?auto=format&fit=crop&q=80&w=800" },
-              { label: "Batteries", img: "https://images.unsplash.com/photo-1595213600645-ec098bb12b6f?auto=format&fit=crop&q=80&w=800" },
-              { label: "Flow", img: "https://images.unsplash.com/photo-1590674852885-ce8245d98863?auto=format&fit=crop&q=80&w=800" }
+              { label: "Brake Pads", img: "/src/assets/images/regenerated_image_1777804406500.jpg" },
+              { label: "Tires", img: "/src/assets/images/regenerated_image_1777804407560.png" },
+              { label: "Batteries", img: "/src/assets/images/regenerated_image_1777804408922.webp" },
+              { label: "Flow", img: "/src/assets/images/regenerated_image_1777804410904.jpg" }
             ].map((p, i) => (
               <motion.div 
                 key={i}
@@ -3089,26 +3168,33 @@ function LandingPageView({ setView, handleLogin }: { setView: (v: any) => void, 
           </div>
           
           <div className="relative aspect-[4/3] bg-slate-900 rounded-[3rem] overflow-hidden shadow-2xl border-8 border-white dark:border-slate-800">
-            {/* Mock Map Background */}
+            {/* Port Harcourt Map Background */}
             <div className="absolute inset-0 opacity-40 bg-[url('https://images.unsplash.com/photo-1526778548025-fa2f459cd5c1?auto=format&fit=crop&q=80&w=1200')] bg-cover grayscale" />
             <div className="absolute inset-0 bg-gradient-to-br from-brand-600/20 to-transparent" />
             
-            {/* Pulses */}
+            {/* Neighborhood Labels */}
+            <div className="absolute top-[18%] left-[28%] text-[10px] font-black text-white/40 uppercase tracking-tighter z-10">GRA Phase II</div>
+            <div className="absolute top-[42%] left-[62%] text-[10px] font-black text-white/40 uppercase tracking-tighter z-10">Trans Amadi</div>
+            <div className="absolute top-[70%] left-[40%] text-[10px] font-black text-white/40 uppercase tracking-tighter z-10">Diobu</div>
+            <div className="absolute top-[10%] left-[68%] text-[10px] font-black text-white/40 uppercase tracking-tighter z-10">Choba</div>
+            <div className="absolute top-[52%] left-[18%] text-[10px] font-black text-white/40 uppercase tracking-tighter z-10">Ada George</div>
+
+            {/* Pulses - Centered on Port Harcourt landmarks */}
             {[
-              { top: '20%', left: '30%' },
-              { top: '40%', left: '60%' },
-              { top: '70%', left: '40%' },
-              { top: '30%', left: '80%' },
-              { top: '60%', left: '70%' },
-              { top: '50%', left: '20%' },
+              { top: '20%', left: '30%', label: 'GRA Zone' },
+              { top: '40%', left: '60%', label: 'Trans Amadi Hub' },
+              { top: '70%', left: '40%', label: 'Mile 1/Diobu' },
+              { top: '30%', left: '80%', label: 'Eleme Outpost' },
+              { top: '60%', left: '70%', label: 'Odili Rd' },
+              { top: '50%', left: '20%', label: 'Location Alpha' },
             ].map((p, i) => (
-              <div key={i} className="absolute" style={{ top: p.top, left: p.left }}>
+              <div key={i} className="absolute group" style={{ top: p.top, left: p.left }}>
                 <span className="relative flex h-8 w-8">
                   <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span>
-                  <span className="relative inline-flex rounded-full h-3 w-3 bg-brand-500 mt-2.5 ml-2.5"></span>
+                  <span className="relative inline-flex rounded-full h-3 w-3 bg-brand-500 mt-2.5 ml-2.5 shadow-[0_0_10px_rgba(14,165,233,0.8)]"></span>
                 </span>
-                <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2 py-1 rounded-md shadow-lg hidden group-hover:block transition-all whitespace-nowrap">
-                  <p className="text-[8px] font-black uppercase tracking-widest leading-none">Mechanic #72</p>
+                <div className="absolute top-10 left-1/2 -translate-x-1/2 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 px-2 py-1 rounded-md shadow-xl hidden group-hover:block transition-all whitespace-nowrap z-20">
+                  <p className="text-[8px] font-black uppercase tracking-widest leading-none text-brand-600">Active Pro: {p.label}</p>
                 </div>
               </div>
             ))}
@@ -3255,7 +3341,13 @@ function LandingPageView({ setView, handleLogin }: { setView: (v: any) => void, 
           
           <div className="relative z-10 space-y-10">
             <div className="space-y-4">
-              <h2 className="text-6xl md:text-8xl font-black tracking-tighter leading-[0.8] italic uppercase">Don't Get <br/> Stuck.</h2>
+              <h2 className="text-5xl md:text-7xl font-black tracking-tighter leading-[0.8] italic uppercase min-h-[2em] flex items-center justify-center">
+                <TypingText phrases={[
+                "Don't Get Stuck",
+                "Don't Leave It For Later",
+                "Don't Get Overcharged"
+              ]} />
+              </h2>
               <p className="max-w-xl mx-auto text-xl font-medium text-brand-100 opacity-90">Join 10,000+ drivers who never worry about breakdown situations anymore.</p>
             </div>
             
